@@ -300,15 +300,11 @@ docker run -dp 3000:3000 \
 docker build -t getting-started .  
 ```
 
-### Part 7: Multi-container apps
-
-In general, each container should do one thing and do it well.
-
-Remember that container, by default, run in isolation and don't know anything about other processes or containers on the same machine. So, how do we allow one container to talk to another? The answer is networking.
+### Part 7: Multi container apps
 
 If two containers are on the same network, they can talk to each other. If they aren't, they can't.
 
-There are two ways to put a container on a network: 1) assign it at start or 2) connect an existing container. For now, we will create the network first and attach the MySQL container at startup.
+There are two ways to put a container on a network: 1) Assign it at start or 2) connect an existing container. For now, we will create the network first and attach the MySQL container at startup.
 
 1. Create the network
 
@@ -316,67 +312,50 @@ There are two ways to put a container on a network: 1) assign it at start or 2) 
 docker network create todo-app
 ```
 
-2. Start a MySQL container and attach it to the network. 
+2. Start a MySQL container and attach it to the network.
 
 ```
 docker run -d \
-     --network todo-app --network-alias mysql \
-     -v todo-mysql-data:/var/lib/mysql \
-     -e MYSQL_ROOT_PASSWORD=secret \
-     -e MYSQL_DATABASE=todos \
-     mysql:5.7
+  --network todo-app --network-alias mysql \
+  mysql:5.7
 ```
 
-3. To confirm we have the database up and running, connect to the database and verify it connects.
+3. To confirm we have the database up and running, connect to the database and verify it connects
 
 ```
-docker exec it <mysql-container-id> mysql -u root -p
+docker exec -it <msql-container-id> mysql -u root -p
 ```
 
-If we run another container on the same network, how do we find the container (remember each container has its own IP address)?
-
-We're going to make use of the `nicolaka/netshoot` container, which ships with a _lot_ of tools that are useful for troubleshooting or debugging networking issues.
-
-1. Start a new container using the netshoot image. Make sure to connect it to the same network:
+4. Connect the app container to our app network
 
 ```
-docker run -it --network todo-app nicolaka/netshoot
+docker run -dp 3000:3000\
+  -w /app \
+  --network todo-app \
+  node:12-alpine
 ```
-
-2. Inside the container, we're going to use the `dig` command, which is a useful DNS tool. We're going to look up the IP address for the hostname `mysql`.
-
-```
-dig mysql
-```
-
-The todo app supports the setting of a few environment variables to specify MySQL connection settings. They are:
-
-- `MYSQL_HOST` - the hostname for the running MySQL server
-- `MYSQL_USER` - the username to use for the connection
-- `MYSQL_PASSWORD` - the password to use for the connection
-- `MYSQL_DB` - the database to use once connected
 
 ### Part 8: Use Docker Compose
 
-1. At the root of the app project, create a file named `docker-compose.yml`
+1. At the root of the app project, create a file named `docker-compose.yml`.
 
-2. In the compose file, we'll start off by defining the schema version.
-
-```
-version: "3.7"
-```
-
-3. Next, we'll define the list of services (or containers) we want to run as part of our application.
+2. We'll start off by defining the schema version
 
 ```
 version: "3.7"
-
-services:
 ```
 
-#### Define the app service
+3. Next, we'll define the list of services (or containers) we want to run as part of our application
 
-This was the command we were using to define our app container:
+```
+services: 
+```
+
+Now, we'll migrate one service at a time into the compose file
+
+#### app service
+
+This was the command we used to define our app container:
 
 ```
 docker run -dp 3000:3000 \
@@ -390,28 +369,35 @@ docker run -dp 3000:3000 \
   sh -c "yarn install && yarn run dev"
 ```
 
-1. First, we'll define the service entry and the image for the container. We can pick any name for the service. The name will automatically become a network alias, which will be useful when defining our MySQL service.
+1. First, let's define the service entry and the image for the container
 
 ```
-version: "3.7"
-
 services:
   app:
     image: node:12-alpine
 ```
 
-2. Typically, you will see the `command` close to the `image` definition. 
+2. Typicallym you'll see the `command` close to the `image` definition
 
 ```
- version: "3.7"
-
- services:
-   app:
-     image: node:12-alpine
-     command: sh -c "yarn install && yarn run dev"
+services:
+  app:
+    image: node:12-alpine
+    command: sh -c "yarn install && yarn run dev"
 ```
 
-3. Let's migrate the `-p 3000:3000`
+3. Let's migrate the `-p 3000:3000` part
+
+```
+services:
+  app:
+    image: node:12-alpine
+    command: sh -c "yarn install && yarn run dev"
+    ports:
+      - 3000:3000
+```
+
+4. working directory and volume mapping
 
 ```
  version: "3.7"
@@ -421,26 +407,13 @@ services:
      image: node:12-alpine
      command: sh -c "yarn install && yarn run dev"
      ports:
-      - 3000:3000
-```
-
-4. Next, we'll migrate both the working directory (`-w /app`) and the volume mapping (`-v "$(pwd):/app"`) by using the `working_dir` and `volumes` definitions. 
-
-```
- version: "3.7"
-
- services:
-   app:
-     image: node:12-alpine
-     command: sh -c "yarn install && yarn run dev"
-     ports:
-      - 3000:3000
+       - 3000:3000
      working_dir: /app
      volumes:
-      - ./:/app
+       - ./:/app
 ```
 
-5. Finally, we need to migrate the environment variable definitions using the `environment` key.
+5. environment variable definitions 
 
 ```
  version: "3.7"
@@ -450,20 +423,20 @@ services:
      image: node:12-alpine
      command: sh -c "yarn install && yarn run dev"
      ports:
-      - 3000:3000
+       - 3000:3000
      working_dir: /app
      volumes:
-      - ./:/app
+       - ./:/app
      environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: secret
-      MYSQL_DB: todos
+       MYSQL_HOST: mysql
+       MYSQL_USER: root
+       MYSQL_PASSWORD: secret
+       MYSQL_DB: todos
 ```
 
-#### Define the MySQL service
+#### MySQL service
 
-The command that we used:
+The command we used:
 
 ```
 docker run -d \
@@ -474,11 +447,9 @@ docker run -d \
   mysql:5.7
 ```
 
-1. First define the new service and name it `mysql`
+1. Define the new service and name it `mysql` so it automatically gets the network alias. We'll go ahead and specify the image to use as well
 
 ```
- version: "3.7"
-
  services:
    app:
      # The app service definition
@@ -486,11 +457,9 @@ docker run -d \
      image: mysql:5.7
 ```
 
-2. Next, we'll define the volume mapping. When we ran the container with `docker run`, the named volume was created automatically. However, that doesn't happen when running with Compose. We need to define the volume in the top-level `volumes:` section and then specify the mountpoint in the service config. By simply providing only the volume name, the default options are used. 
+2. Next, we'll define the volume mapping. We need to define the volume in the top-level `volumes:` section and then specify the mountpoint in the service config. By simply providing only the volume name, the default options are used. 
 
 ```
- version: "3.7"
-
  services:
    app:
      # The app service definition
@@ -503,11 +472,9 @@ docker run -d \
    todo-mysql-data:
 ```
 
-3. Finally, we only need to specify the environment variables.
+3. Finally, we only need to specify the environment variables
 
 ```
- version: "3.7"
-
  services:
    app:
      # The app service definition
@@ -523,3 +490,8 @@ docker run -d \
    todo-mysql-data:
 ```
 
+#### Run the application stack
+
+1. Make sure no other copies of the app/db are running first (`docker ps` and `docker rm -f <ids>`).
+
+2. Start up the application stack using the `docker-compose up` command. 
